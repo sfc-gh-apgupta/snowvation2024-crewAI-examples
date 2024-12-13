@@ -6,8 +6,10 @@ from marketing_posts_e2e_eval.marketing_crew.marketing_crew import MarketingPost
 from marketing_posts_e2e_eval.evaluator_crew.eval_crew import EvaluatorCrew
 from trulens.apps.custom import TruCustomApp
 from trulens.core import TruSession
+from snowflake.snowpark.session import Session
+from trulens.connectors.snowflake import SnowflakeConnector
 from trulens.core import Feedback
-from trulens.core.schema import FeedbackResult
+from trulens.core.schema.feedback import FeedbackResult
 
 from typing import Optional, Dict
 
@@ -144,6 +146,15 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
         print("feedback", self.state.feedback)
         self.state.retry_count += 1
 
+        tru_snowflake_connector.add_feedback(
+            FeedbackResult(
+                record_id=str(round(time.time() * 1000)),
+                name=f"{self.inputs['customer_domain']}_quality_score",
+                result=self.state.quality,
+                feedback_definition_id=fid,
+            )
+        )
+
         if self.state.quality > 3:
             return "complete"
 
@@ -163,6 +174,18 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
         print("Results:", self.state.marketing_post)
         print("Feedback:", self.state.feedback)
 
+connection_params = {
+    "account":  "SFENGINEERING-MLPLATFORMTEST",
+    "user": "",
+    "password": "",
+    "database": "CYIN",
+    "schema": "MODEL_MONITOR_SCHEMA",
+    "warehouse": "CYIN",
+}
+
+snowpark_session = Session.builder.configs(connection_params).create()
+tru_snowflake_connector = SnowflakeConnector(snowpark_session=snowpark_session)
+fid = tru_snowflake_connector.add_feedback_definition(Feedback(lambda x: x, name="quality_score"))
 
 def kickoff(inputs: Optional[Dict[str, str]] = None):
 
@@ -180,8 +203,6 @@ def kickoff(inputs: Optional[Dict[str, str]] = None):
             Secondary goal: During the execution of the multi-agent system/tasks, evaluate the quality of answers at each step.
             """,
         }
-
     flow = MarketingPostFlow(inputs=inputs)
     asyncio.run(flow.kickoff())
     
-    # assert len(recorder.records) == 1, "There should be no records in the recorder. Got records: {}".format(recorder.records)
