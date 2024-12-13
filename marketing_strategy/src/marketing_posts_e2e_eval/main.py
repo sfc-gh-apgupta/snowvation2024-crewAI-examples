@@ -53,6 +53,7 @@ Project Overview: Creating a comprehensive marketing campaign to boost awareness
         raise Exception(f"An error occurred while training the crew: {e}")
 
 class MarketingPostFlowState(BaseModel):
+    tru_record_id: str = ""
     marketing_post: str = ""
     feedback: Optional[str] = None
     quality: int = 0
@@ -67,8 +68,7 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
         self._marketing_crew = MarketingPostsCrew().crew()
         self.final_eval_score = None
 
-        trusession = TruSession()
-        # trusession.reset_database()
+        self.trusession = TruSession()
         self.eval_results = []
         self.feedbacks = [
             Feedback(lambda x: None, name="quality_score_retry_0"),
@@ -79,7 +79,7 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
         feedback_ids = []
         
         for feedback in self.feedbacks:
-            feedback_id = trusession.connector.add_feedback_definition(feedback)
+            feedback_id = self.trusession.connector.add_feedback_definition(feedback)
             feedback_ids.append(feedback_id)
 
     def _ingest_feedbacks(self, record_id):
@@ -92,6 +92,7 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
                     feedback_definition_id=self.feedbacks[i].feedback_definition_id,
                 )
             )
+        self.eval_results = []
 
     @start("retry")
     def generate_marketing_post(self):
@@ -102,10 +103,22 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
             'previous_marketing_post': self.state.marketing_post,
             'feedback': self.state.feedback,
         }
-        result = self._marketing_crew.kickoff(inputs=inputs)
-
+        tru_marketing_posts_crew = TruCustomApp(self._marketing_crew, app_name="MarketingPostsCrew", app_version="baseline", feedbacks=[])
+        with tru_marketing_posts_crew as recorder:
+            result = self._marketing_crew.kickoff(inputs=inputs)
+        
         print("Marketing post generated", result.raw)
         self.state.marketing_post = result.raw
+
+        if len(recorder.records) == 0:
+            return
+        elif len(recorder.records) >= 2:
+            record_idx = -2
+        else:
+            record_idx = -1
+        self.state.tru_record_id = recorder.records[record_idx].record_id
+
+        # self._ingest_feedbacks(record_id)
 
     @router(generate_marketing_post)
     def evaluate_marketing_post(self):
@@ -116,7 +129,16 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
         self.state.quality = result["quality"]
         self.state.feedback = result["feedback"]
 
-        self.eval_results.append({"quality": self.state.quality, "feedback": self.state.feedback})
+        # self.eval_results.append({"quality": self.state.quality, "feedback": self.state.feedback})
+
+        self.trusession.add_feedback(
+            FeedbackResult(
+                record_id=self.state.tru_record_id,
+                name=f"quality_score_retry_{self.state.retry_count}",
+                result=result["quality"],
+                feedback_definition_id=self.feedbacks[self.state.retry_count].feedback_definition_id,
+            )
+        )
 
         print("quality", self.state.quality)
         print("feedback", self.state.feedback)
@@ -143,7 +165,6 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
 
 
 def kickoff(inputs: Optional[Dict[str, str]] = None):
-    tru_marketing_posts_crew = TruCustomApp(MarketingPostFlow, app_name="MarketingPostsCrew", app_version="reflection", feedbacks=[])
 
     if not inputs:
         inputs = {
@@ -161,9 +182,6 @@ def kickoff(inputs: Optional[Dict[str, str]] = None):
         }
 
     flow = MarketingPostFlow(inputs=inputs)
-    with tru_marketing_posts_crew as recorder:
-        asyncio.run(flow.kickoff())
+    asyncio.run(flow.kickoff())
     
-        assert len(recorder.records) == 0, "There should be no records in the recorder. Got records: {}".format(recorder.records)
-        record_id = recorder.records[0].record_id
-        flow._ingest_feedbacks(record_id)
+    # assert len(recorder.records) == 1, "There should be no records in the recorder. Got records: {}".format(recorder.records)

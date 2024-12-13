@@ -61,7 +61,7 @@ class ReflectionTask(Task):
         agent: Optional[BaseAgent],
         context: Optional[str],
         tools: Optional[List[Any]],
-        max_iter: int = 3
+        max_iter: int = 2
     ) -> TaskOutput:
         """Run the core execution logic of the task."""
         self.description: str
