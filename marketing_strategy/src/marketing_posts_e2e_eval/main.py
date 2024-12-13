@@ -5,11 +5,15 @@ from dotenv import load_dotenv
 from marketing_posts_e2e_eval.marketing_crew.marketing_crew import MarketingPostsCrew
 from marketing_posts_e2e_eval.evaluator_crew.eval_crew import EvaluatorCrew
 from trulens.apps.custom import TruCustomApp
+from trulens.core import TruSession
+from trulens.core import Feedback
+from trulens.core.schema import FeedbackResult
 
 from typing import Optional, Dict
 
 from crewai.flow.flow import Flow, listen, router, start
 from pydantic import BaseModel
+
 
 load_dotenv()
 
@@ -61,6 +65,33 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
         super().__init__()
         self._flow_inputs = inputs
         self._marketing_crew = MarketingPostsCrew().crew()
+        self.final_eval_score = None
+
+        trusession = TruSession()
+        # trusession.reset_database()
+        self.eval_results = []
+        self.feedbacks = [
+            Feedback(lambda x: None, name="quality_score_retry_0"),
+            Feedback(lambda x: None, name="quality_score_retry_1"),
+            Feedback(lambda x: None, name="quality_score_retry_2"),
+            Feedback(lambda x: None, name="quality_score_retry_3"),
+        ]
+        feedback_ids = []
+        
+        for feedback in self.feedbacks:
+            feedback_id = trusession.connector.add_feedback_definition(feedback)
+            feedback_ids.append(feedback_id)
+
+    def _ingest_feedbacks(self, record_id):
+        for i, result in enumerate(self.eval_results):
+            TruSession().add_feedback(
+                FeedbackResult(
+                    record_id=record_id,
+                    name=f"quality_score_retry_{i}",
+                    result=result["quality"],
+                    feedback_definition_id=self.feedbacks[i].feedback_definition_id,
+                )
+            )
 
     @start("retry")
     def generate_marketing_post(self):
@@ -84,6 +115,8 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
         result = EvaluatorCrew().crew().kickoff(inputs={"marketing_post": self.state.marketing_post})
         self.state.quality = result["quality"]
         self.state.feedback = result["feedback"]
+
+        self.eval_results.append({"quality": self.state.quality, "feedback": self.state.feedback})
 
         print("quality", self.state.quality)
         print("feedback", self.state.feedback)
@@ -110,7 +143,7 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
 
 
 def kickoff(inputs: Optional[Dict[str, str]] = None):
-    tru_marketing_posts_crew = TruCustomApp(MarketingPostFlow, app_name="MarketingPostsCrew", app_version="1.0.0", feedbacks=[])
+    tru_marketing_posts_crew = TruCustomApp(MarketingPostFlow, app_name="MarketingPostsCrew", app_version="reflection", feedbacks=[])
 
     if not inputs:
         inputs = {
@@ -131,3 +164,6 @@ def kickoff(inputs: Optional[Dict[str, str]] = None):
     with tru_marketing_posts_crew as recorder:
         asyncio.run(flow.kickoff())
     
+        assert len(recorder.records) == 0, "There should be no records in the recorder. Got records: {}".format(recorder.records)
+        record_id = recorder.records[0].record_id
+        flow._ingest_feedbacks(record_id)
