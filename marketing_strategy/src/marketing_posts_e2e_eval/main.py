@@ -4,6 +4,7 @@ import sys
 from dotenv import load_dotenv
 from marketing_posts_e2e_eval.marketing_crew.marketing_crew import MarketingPostsCrew
 from marketing_posts_e2e_eval.evaluator_crew.eval_crew import EvaluatorCrew
+from trulens.apps.custom import TruCustomApp
 
 from typing import Optional, Dict
 
@@ -59,6 +60,7 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
     def __init__(self, inputs: dict[str, str]):
         super().__init__()
         self._flow_inputs = inputs
+        self._marketing_crew = MarketingPostsCrew().crew()
 
     @start("retry")
     def generate_marketing_post(self):
@@ -69,7 +71,7 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
             'previous_marketing_post': self.state.marketing_post,
             'feedback': self.state.feedback,
         }
-        result = MarketingPostsCrew().crew().kickoff(inputs=inputs)
+        result = self._marketing_crew.kickoff(inputs=inputs)
 
         print("Marketing post generated", result.raw)
         self.state.marketing_post = result.raw
@@ -108,6 +110,8 @@ class MarketingPostFlow(Flow[MarketingPostFlowState]):
 
 
 def kickoff(inputs: Optional[Dict[str, str]] = None):
+    tru_marketing_posts_crew = TruCustomApp(MarketingPostFlow, app_name="MarketingPostsCrew", app_version="1.0.0", feedbacks=[])
+
     if not inputs:
         inputs = {
             'customer_domain': 'crewai.com',
@@ -122,4 +126,8 @@ def kickoff(inputs: Optional[Dict[str, str]] = None):
             Secondary goal: During the execution of the multi-agent system/tasks, evaluate the quality of answers at each step.
             """,
         }
-    asyncio.run(MarketingPostFlow(inputs=inputs).kickoff())
+
+    flow = MarketingPostFlow(inputs=inputs)
+    with tru_marketing_posts_crew as recorder:
+        asyncio.run(flow.kickoff())
+    

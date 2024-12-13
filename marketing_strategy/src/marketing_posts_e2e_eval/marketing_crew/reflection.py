@@ -56,8 +56,6 @@ class ReflectionTask(Task):
         with open(f"reflection_outputs/feedback_sample_{time.time()}.txt", "w") as f:
             f.write(results)
 
-
-
     def _execute_core(
         self,
         agent: Optional[BaseAgent],

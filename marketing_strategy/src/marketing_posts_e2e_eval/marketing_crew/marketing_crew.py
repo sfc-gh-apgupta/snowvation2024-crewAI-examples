@@ -144,7 +144,7 @@ class MarketingPostsCrew():
         return ReflectionTask(
             config=self.tasks_config['campaign_idea_task'],
             agent=self.creative_content_creator(),
-               output_json=CampaignIdea,
+            output_json=CampaignIdea,
             reflection_task=Task(
                 config=self.tasks_config['campaign_idea_reflection_task'],
                 output_json=ReflectionFeedback
@@ -157,7 +157,7 @@ class MarketingPostsCrew():
         return ReflectionTask(
             config=self.tasks_config['copy_creation_task'],
             agent=self.creative_content_creator(),
-               context=[self.marketing_strategy_task(), self.campaign_idea_task()],
+            context=[self.marketing_strategy_task(), self.campaign_idea_task()],
             output_json=Copy,
             reflection_task=Task(
                 config=self.tasks_config['copy_creation_reflection_task'],
