@@ -1,12 +1,26 @@
 import os
 import json
-from crewai import Crew
 from dotenv import load_dotenv
 from marketing_posts_e2e_eval.main import kickoff
+from trulens.core import TruSession
+from trulens.connectors.snowflake import SnowflakeConnector
 
 load_dotenv()
 
 def run_inputs():
+    session = TruSession(
+        connector=SnowflakeConnector(
+            account="fab02971",
+            user=os.getenv("USER"),
+            password=os.getenv("SNOWFLAKE_PASSWORD"),
+            warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
+            database=os.getenv("USER"),
+            schema="CREWAI",
+            role="ENGINEER"
+        )
+    )
+    session.experimental_enable_feature("otel_tracing")
+
     file_dir = os.path.dirname(os.path.abspath(__file__))
     inputs_file_path = os.path.join(file_dir, "../../run_inputs.json")
     
